@@ -3774,14 +3774,14 @@
                             showScreen('requestsScreen');
                             loadRequests();
                             break;
-                        case 'archived':
-                            showScreen('archivedScreen');
-                            loadArchivedChats();
-                            break;
-                        case 'starred':
-                            showScreen('starredScreen');
-                            loadStarredMessages();
-                            break;
+case 'archived':
+    showScreen('archivedScreen');
+    loadArchivedChats();
+    break;
+case 'starred':
+    showScreen('starredScreen');
+    loadStarredMessages();
+    break;
                         case 'settings':
                             showScreen('settingsScreen');
                             break;
@@ -3799,9 +3799,11 @@
                             showModal('deleteAccountModal');
                             break;
                         case 'help':
-                        case 'about':
-                            showToast('Coming soon!');
-                            break;
+    showHelpCenter();
+    break;
+case 'about':
+    showAboutScreen();
+    break;
                     }
                 }, 300);
                 
@@ -4725,20 +4727,34 @@
         }
 
         async function loadRequests() {
-            const container = document.getElementById('requestsList');
-            container.innerHTML = `
-                <div class="loading-state">
-                    <div class="loading-state-spinner"></div>
-                    <span class="loading-state-text">Loading requests...</span>
-                </div>
-            `;
+    const container = document.getElementById('requestsList');
+    container.innerHTML = `
+        <div class="loading-state">
+            <div class="loading-state-spinner"></div>
+            <span class="loading-state-text">Loading requests...</span>
+        </div>
+    `;
+    
+    try {
+        // First try with ordering
+        let snapshot;
+        try {
+            snapshot = await db.collection('friendRequests')
+                .where('toUid', '==', currentUser.uid)
+                .where('status', '==', 'pending')
+                .orderBy('createdAt', 'desc')
+                .get();
+        } catch (indexError) {
+            // Fallback: load without ordering if index doesn't exist
+            console.log('Using fallback query (no index)');
+            const allSnapshot = await db.collection('friendRequests')
+                .where('toUid', '==', currentUser.uid)
+                .get();
             
-            try {
-                const snapshot = await db.collection('friendRequests')
-                    .where('toUid', '==', currentUser.uid)
-                    .where('status', '==', 'pending')
-                    .orderBy('createdAt', 'desc')
-                    .get();
+            // Filter manually
+            const docs = allSnapshot.docs.filter(doc => doc.data().status === 'pending');
+            snapshot = { empty: docs.length === 0, docs: docs, forEach: (fn) => docs.forEach(fn) };
+        }
                 
                 if (snapshot.empty) {
                     container.innerHTML = `
@@ -6225,10 +6241,14 @@
                         clearCache();
                         break;
                     case 'wallpaper':
-                    case 'help':
-                    case 'about':
-                        showToast('Coming soon!');
-                        break;
+    showWallpaperModal();
+    break;
+case 'help':
+    showHelpCenter();
+    break;
+case 'about':
+    showAboutScreen();
+    break;
                 }
                 
                 vibrate(2);
@@ -7002,8 +7022,71 @@
 
         // Initialize
         loadEmojis('smileys');
+
+                // ==================== WALLPAPER ====================
+        function showWallpaperModal() {
+            const wallpapers = [
+                { name: 'Default', value: 'var(--white)' },
+                { name: 'Light Gray', value: '#F5F5F5' },
+                { name: 'Blue', value: '#E3F2FD' },
+                { name: 'Green', value: '#E8F5E9' },
+                { name: 'Purple', value: '#F3E5F5' },
+                { name: 'Pink', value: '#FCE4EC' }
+            ];
+            
+            const modalContent = wallpapers.map((wp, idx) => `
+                <div class="settings-item" onclick="applyWallpaper('${wp.value}'); hideModal('wallpaperModal');" style="cursor: pointer;">
+                    <div style="width: 40px; height: 40px; background: ${wp.value}; border-radius: 8px; border: 2px solid var(--border-light);"></div>
+                    <div class="settings-info">
+                        <div class="settings-title">${wp.name}</div>
+                    </div>
+                </div>
+            `).join('');
+            
+            const existingModal = document.getElementById('wallpaperModal');
+            if (existingModal) {
+                existingModal.remove();
+            }
+            
+            const modalHTML = `
+                <div class="modal-overlay" id="wallpaperModal">
+                    <div class="modal">
+                        <div class="modal-header">
+                            <h3 class="modal-title">Chat Wallpaper</h3>
+                        </div>
+                        <div class="modal-body" style="padding: 0;">
+                            ${modalContent}
+                        </div>
+                        <div class="modal-actions">
+                            <button class="modal-btn secondary" onclick="hideModal('wallpaperModal')" style="flex: 1;">Cancel</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            document.body.insertAdjacentHTML('beforeend', modalHTML);
+            showModal('wallpaperModal');
+        }
+
+        window.applyWallpaper = function(color) {
+            const container = document.getElementById('messagesContainer');
+            if (container) {
+                container.style.background = color;
+            }
+            showToast('Wallpaper applied');
+        };
+
+        // ==================== HELP CENTER ====================
+        function showHelpCenter() {
+            alert('Help Center\n\n📱 Getting Started:\n• Sign in with Google\n• Choose a username\n• Add friends and start chatting\n\n💬 Features:\n• Send text, photos, videos\n• React to messages\n• Forward and reply\n• Star important messages\n\n🔒 Privacy:\n• Control who sees your info\n• Block unwanted users\n• Manage read receipts\n\n📧 Support: support@whatsup.com');
+        }
+
+        // ==================== ABOUT ====================
+        function showAboutScreen() {
+            alert('What\'s Up v2.0.0\n\n✨ A modern, secure messaging app\n\n© 2024 What\'s Up\nAll rights reserved\n\nMade with ❤️ for seamless communication');
+        }
         
         console.log('🚀 What\'s Up v2.0 initialized successfully!');
+        
     </script>
 </body>
 </html>
