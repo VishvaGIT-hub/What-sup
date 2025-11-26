@@ -3874,29 +3874,124 @@ case 'about':
             hideModal('logoutModal');
         });
 
-        document.getElementById('deleteConfirmInput').addEventListener('input', (e) => {
-            const btn = document.getElementById('confirmDeleteBtn');
-            btn.disabled = e.target.value !== 'DELETE';
-        });
+       document.getElementById('deleteConfirmInput').addEventListener('input', (e) => {
+    const btn = document.getElementById('confirmDeleteBtn');
+    const input = e.target.value.trim();
+    btn.disabled = input !== 'DELETE';
+    
+    // Visual feedback
+    if (input === 'DELETE') {
+        btn.style.opacity = '1';
+    } else {
+        btn.style.opacity = '0.4';
+    }
+});
 
         document.getElementById('confirmDeleteBtn').addEventListener('click', async () => {
-            hideModal('deleteAccountModal');
-            showLoading(true);
-            
-            try {
-                await db.collection('users').doc(currentUser.uid).delete();
-                if (currentUserData?.username) {
-                    await db.collection('usernames').doc(currentUserData.username).delete();
-                }
-                await currentUser.delete();
-                showToast('Account deleted');
-            } catch (error) {
-                console.error('Delete error:', error);
-                showToast('Failed to delete account');
-            } finally {
-                showLoading(false);
-            }
+    hideModal('deleteAccountModal');
+    showLoading(true);
+    
+    try {
+        // Step 1: Re-authenticate user (required by Firebase)
+        const provider = new firebase.auth.GoogleAuthProvider();
+        try {
+            await currentUser.reauthenticateWithPopup(provider);
+        } catch (reauthError) {
+            console.error('Re-authentication error:', reauthError);
+            showToast('Please sign in again to delete account');
+            showLoading(false);
+            return;
+        }
+        
+        // Step 2: Delete all user's chats
+        const chatsSnapshot = await db.collection('chats')
+            .where('participants', 'array-contains', currentUser.uid)
+            .get();
+        
+        const deleteBatch = db.batch();
+        chatsSnapshot.forEach(doc => {
+            deleteBatch.delete(doc.ref);
         });
+        await deleteBatch.commit();
+        
+        // Step 3: Delete friend requests
+        const requestsSnapshot = await db.collection('friendRequests')
+            .where('fromUid', '==', currentUser.uid)
+            .get();
+        
+        const requestsBatch = db.batch();
+        requestsSnapshot.forEach(doc => {
+            requestsBatch.delete(doc.ref);
+        });
+        await requestsBatch.commit();
+        
+        const receivedRequestsSnapshot = await db.collection('friendRequests')
+            .where('toUid', '==', currentUser.uid)
+            .get();
+        
+        const receivedBatch = db.batch();
+        receivedRequestsSnapshot.forEach(doc => {
+            receivedBatch.delete(doc.ref);
+        });
+        await receivedBatch.commit();
+        
+        // Step 4: Delete starred messages
+        const starredSnapshot = await db.collection('users').doc(currentUser.uid)
+            .collection('starredMessages')
+            .get();
+        
+        const starredBatch = db.batch();
+        starredSnapshot.forEach(doc => {
+            starredBatch.delete(doc.ref);
+        });
+        await starredBatch.commit();
+        
+        // Step 5: Delete blocked users
+        const blockedSnapshot = await db.collection('users').doc(currentUser.uid)
+            .collection('blocked')
+            .get();
+        
+        const blockedBatch = db.batch();
+        blockedSnapshot.forEach(doc => {
+            blockedBatch.delete(doc.ref);
+        });
+        await blockedBatch.commit();
+        
+        // Step 6: Delete user document
+        await db.collection('users').doc(currentUser.uid).delete();
+        
+        // Step 7: Delete username claim
+        if (currentUserData?.username) {
+            await db.collection('usernames').doc(currentUserData.username).delete();
+        }
+        
+        // Step 8: Delete auth account
+        await currentUser.delete();
+        
+        showToast('Account deleted successfully');
+        
+        // Reload page to go back to auth screen
+        setTimeout(() => {
+            window.location.reload();
+        }, 1500);
+        
+    } catch (error) {
+        console.error('Delete error:', error);
+        
+        if (error.code === 'auth/requires-recent-login') {
+            showToast('Please sign in again and retry');
+            await auth.signOut();
+            window.location.reload();
+        } else if (error.code === 'permission-denied') {
+            showToast('Permission denied. Please try again.');
+        } else {
+            showToast('Failed to delete account: ' + error.message);
+        }
+    } finally {
+        showLoading(false);
+        document.getElementById('deleteConfirmInput').value = '';
+    }
+});
 
         document.getElementById('cancelDeleteBtn').addEventListener('click', () => {
             hideModal('deleteAccountModal');
