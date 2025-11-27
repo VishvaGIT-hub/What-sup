@@ -7478,55 +7478,77 @@
 
         // Initiate Call
         async function initiateCall(type) {
-            if (!currentChatUser || !currentUser) {
-                showToast('No user selected');
-                return;
-            }
-            
-            currentCallType = type;
-            currentCallId = `call_${Date.now()}_${currentUser.uid}`;
-            isCallInitiator = true;
-            
-            try {
-                const constraints = {
-                    audio: true,
-                    video: type === 'video' ? {
-                        facingMode: 'user',
-                        width: { ideal: 1280 },
-                        height: { ideal: 720 }
-                    } : false
-                };
+    if (!currentChatUser || !currentUser) {
+        showToast('No user selected');
+        return;
+    }
+    
+    currentCallType = type;
+    currentCallId = `call_${Date.now()}_${currentUser.uid}`;
+    isCallInitiator = true;
+    
+    try {
+        const constraints = {
+            audio: {
+                echoCancellation: true,
+                noiseSuppression: true,
+                autoGainControl: true
+            },
+            video: type === 'video' ? {
+                facingMode: 'user',
+                width: { ideal: 1280 },
+                height: { ideal: 720 }
+            } : false
+        };
+        
+        localStream = await navigator.mediaDevices.getUserMedia(constraints);
+        
+        showCallScreen(currentChatUser.username, type);
+        
+        if (type === 'video') {
+            document.getElementById('localVideo').srcObject = localStream;
+            document.getElementById('voiceCallUI').classList.add('hide');
+            document.getElementById('videoContainer').classList.remove('hide');
+            document.getElementById('videoToggleBtn').classList.remove('hide');
+        } else {
+            document.getElementById('voiceCallUI').classList.remove('hide');
+            document.getElementById('videoContainer').classList.add('hide');
+            document.getElementById('videoToggleBtn').classList.add('hide');
+            document.getElementById('voiceCallAvatar').src = 
+                currentChatUser.photoURL || generateAvatar(currentChatUser.username);
+        }
+        
+        peerConnection = new RTCPeerConnection({
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' },
+                { urls: 'stun:stun2.l.google.com:19302' }
+            ],
+            iceCandidatePoolSize: 10
+        });
+        
+        localStream.getTracks().forEach(track => {
+            peerConnection.addTrack(track, localStream);
+        });
+        
+        peerConnection.ontrack = (event) => {
+            console.log('Remote track received:', event);
+            if (!remoteStream) {
+                remoteStream = new MediaStream();
+                document.getElementById('remoteVideo').srcObject = remoteStream;
                 
-                localStream = await navigator.mediaDevices.getUserMedia(constraints);
-                
-                showCallScreen(currentChatUser.username, type);
-                
-                if (type === 'video') {
-                    document.getElementById('localVideo').srcObject = localStream;
-                    document.getElementById('voiceCallUI').classList.add('hide');
-                    document.getElementById('videoContainer').classList.remove('hide');
-                    document.getElementById('videoToggleBtn').classList.remove('hide');
-                } else {
-                    document.getElementById('voiceCallUI').classList.remove('hide');
-                    document.getElementById('videoContainer').classList.add('hide');
-                    document.getElementById('videoToggleBtn').classList.add('hide');
-                    document.getElementById('voiceCallAvatar').src = 
-                        currentChatUser.photoURL || generateAvatar(currentChatUser.username);
+                if (type === 'voice') {
+                    const audioElement = document.getElementById('remoteAudio') || new Audio();
+                    audioElement.srcObject = remoteStream;
+                    audioElement.autoplay = true;
+                    audioElement.play().catch(e => console.log('Audio play error:', e));
                 }
-                
-                peerConnection = new RTCPeerConnection(rtcConfig);
-                
-                localStream.getTracks().forEach(track => {
-                    peerConnection.addTrack(track, localStream);
-                });
-                
-                peerConnection.ontrack = (event) => {
-                    if (event.streams && event.streams[0]) {
-                        remoteStream = event.streams[0];
-                        document.getElementById('remoteVideo').srcObject = remoteStream;
-                    }
-                };
-                
+            }
+            event.streams[0].getTracks().forEach(track => {
+                remoteStream.addTrack(track);
+            });
+        };
+        
                 peerConnection.onicecandidate = (event) => {
                     if (event.candidate) {
                         rtdb.ref(`calls/${currentCallId}/callerCandidates`).push({
@@ -7595,58 +7617,80 @@
 
         // Accept Call
         document.getElementById('acceptCallBtn').addEventListener('click', async () => {
-            const overlay = document.getElementById('incomingCallOverlay');
-            overlay.classList.remove('active');
-            stopRingtone();
-            
-            if (overlay.dataset.timeout) {
-                clearTimeout(parseInt(overlay.dataset.timeout));
-            }
-            
-            if (!incomingCallData) {
-                showToast('Call data not found');
-                return;
-            }
-            
-            try {
-                const constraints = {
-                    audio: true,
-                    video: currentCallType === 'video' ? {
-                        facingMode: 'user',
-                        width: { ideal: 1280 },
-                        height: { ideal: 720 }
-                    } : false
-                };
+    const overlay = document.getElementById('incomingCallOverlay');
+    overlay.classList.remove('active');
+    stopRingtone();
+    
+    if (overlay.dataset.timeout) {
+        clearTimeout(parseInt(overlay.dataset.timeout));
+    }
+    
+    if (!incomingCallData) {
+        showToast('Call data not found');
+        return;
+    }
+    
+    try {
+        const constraints = {
+            audio: {
+                echoCancellation: true,
+                noiseSuppression: true,
+                autoGainControl: true
+            },
+            video: currentCallType === 'video' ? {
+                facingMode: 'user',
+                width: { ideal: 1280 },
+                height: { ideal: 720 }
+            } : false
+        };
+        
+        localStream = await navigator.mediaDevices.getUserMedia(constraints);
+        
+        showCallScreen(incomingCallData.callerName, currentCallType);
+        
+        if (currentCallType === 'video') {
+            document.getElementById('localVideo').srcObject = localStream;
+            document.getElementById('voiceCallUI').classList.add('hide');
+            document.getElementById('videoContainer').classList.remove('hide');
+            document.getElementById('videoToggleBtn').classList.remove('hide');
+        } else {
+            document.getElementById('voiceCallUI').classList.remove('hide');
+            document.getElementById('videoContainer').classList.add('hide');
+            document.getElementById('videoToggleBtn').classList.add('hide');
+            document.getElementById('voiceCallAvatar').src = 
+                incomingCallData.callerPhoto || generateAvatar(incomingCallData.callerName);
+        }
+        
+        peerConnection = new RTCPeerConnection({
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' },
+                { urls: 'stun:stun2.l.google.com:19302' }
+            ],
+            iceCandidatePoolSize: 10
+        });
+        
+        localStream.getTracks().forEach(track => {
+            peerConnection.addTrack(track, localStream);
+        });
+        
+        peerConnection.ontrack = (event) => {
+            console.log('Remote track received:', event);
+            if (!remoteStream) {
+                remoteStream = new MediaStream();
+                document.getElementById('remoteVideo').srcObject = remoteStream;
                 
-                localStream = await navigator.mediaDevices.getUserMedia(constraints);
-                
-                showCallScreen(incomingCallData.callerName, currentCallType);
-                
-                if (currentCallType === 'video') {
-                    document.getElementById('localVideo').srcObject = localStream;
-                    document.getElementById('voiceCallUI').classList.add('hide');
-                    document.getElementById('videoContainer').classList.remove('hide');
-                    document.getElementById('videoToggleBtn').classList.remove('hide');
-                } else {
-                    document.getElementById('voiceCallUI').classList.remove('hide');
-                    document.getElementById('videoContainer').classList.add('hide');
-                    document.getElementById('videoToggleBtn').classList.add('hide');
-                    document.getElementById('voiceCallAvatar').src = 
-                        incomingCallData.callerPhoto || generateAvatar(incomingCallData.callerName);
+                if (currentCallType === 'voice') {
+                    const audioElement = document.getElementById('remoteAudio') || new Audio();
+                    audioElement.srcObject = remoteStream;
+                    audioElement.autoplay = true;
+                    audioElement.play().catch(e => console.log('Audio play error:', e));
                 }
-                
-                peerConnection = new RTCPeerConnection(rtcConfig);
-                
-                localStream.getTracks().forEach(track => {
-                    peerConnection.addTrack(track, localStream);
-                });
-                
-                peerConnection.ontrack = (event) => {
-                    if (event.streams && event.streams[0]) {
-                        remoteStream = event.streams[0];
-                        document.getElementById('remoteVideo').srcObject = remoteStream;
-                    }
-                };
+            }
+            event.streams[0].getTracks().forEach(track => {
+                remoteStream.addTrack(track);
+            });
+        };
                 
                 peerConnection.onicecandidate = (event) => {
                     if (event.candidate) {
@@ -8487,10 +8531,17 @@ for seamless communication`);
         // Initialize
         loadEmojis('smileys');
         initRingtone();
-
+            
         console.log('🚀 What\'s Up v2.0 by Vishva Dev (Dev. Studio) initialized successfully!');
         console.log('📞 WebRTC calling system ready!');
         console.log('👤 Current user:', currentUser?.email);
+
+                <!-- Hidden File Inputs -->
+    <input type="file" id="fileInput" accept="image/*,video/*,.pdf,.doc,.docx" style="display: none;">
+    <input type="file" id="avatarInput" accept="image/*" style="display: none;">
+
+                        <!-- Remote Audio Element for Voice Calls -->
+    <audio id="remoteAudio" autoplay playsinline></audio>
         
     </script>
 </body>
